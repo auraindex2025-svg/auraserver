@@ -251,37 +251,56 @@ async function checkSoftwareSignatures(metadata, intake_json, flags) {
   
   const detectedSoftware = softwareFields.filter(Boolean);
   
-  // Obtener software declarado (si existe)
-  // NOTA: Ajusta según el campo real en tu JSON de intake
-  const declaredSoftware = intake_json?.genesis_declaration?.ai_tools_declared?.map(tool => tool.engine) || [];
-  const otherDeclaredSoftware = intake_json?.process_declaration?.software_used || [];
-  const allDeclaredSoftware = [...declaredSoftware, ...otherDeclaredSoftware];
+  if (detectedSoftware.length === 0) {
+    return; // No hay software detectado, nada que comparar
+  }
   
-  if (detectedSoftware.length > 0) {
-    if (allDeclaredSoftware.length > 0) {
-      // Hay software declarado → comparar
-      detectedSoftware.forEach(software => {
-        // Verificar si el software detectado está en los declarados
-        const isDeclared = allDeclaredSoftware.some(declared => 
-          software.toLowerCase().includes(declared.toLowerCase()) ||
-          declared.toLowerCase().includes(software.toLowerCase())
-        );
-        
-        if (!isDeclared) {
-          flags.add(TECHNICAL_FLAGS.UNDECLARED_SOFTWARE);
-          console.log(`Software no declarado detectado: ${software}`);
-        }
-      });
-    } else {
-      // Hay software detectado pero NO hay declaración
-      flags.add(TECHNICAL_FLAGS.SOFTWARE_SIGNATURE_UNKNOWN);
-      console.log(`Software detectado sin declaración previa: ${detectedSoftware[0]}`);
-    }
+  // 🚫 CORRECCIÓN CRÍTICA: NO filtrar por "ai_tools_declared"
+  // Debemos verificar TODA declaración de software en el intake
+  const declaredTools = [];
+  
+  // 1. Verificar si existe genesis_declaration.ai_tools_declared (sin asumir que son solo IA)
+  if (intake_json?.genesis_declaration?.ai_tools_declared) {
+    intake_json.genesis_declaration.ai_tools_declared.forEach(tool => {
+      if (tool.engine) declaredTools.push(tool.engine);
+      if (tool.custom_label) declaredTools.push(tool.custom_label);
+    });
+  }
+  
+  // 2. Verificar process_declaration.software_used (si el campo existe en futuras versiones)
+  // Nota: Este campo no existe en el JSON v1.0.0, pero lo dejamos para extensibilidad
+  if (intake_json?.process_declaration?.software_used) {
+    intake_json.process_declaration.software_used.forEach(software => {
+      declaredTools.push(software);
+    });
+  }
+  
+  // 🚫 ELIMINADO: No asumir que "ai_tools_declared" son solo herramientas de IA
+  // Tratar todas las herramientas como software genérico
+  
+  if (declaredTools.length > 0) {
+    // Hay software declarado → comparar
+    detectedSoftware.forEach(software => {
+      const isDeclared = declaredTools.some(declared => 
+        software.toLowerCase().includes(declared.toLowerCase()) ||
+        declared.toLowerCase().includes(software.toLowerCase())
+      );
+      
+      if (!isDeclared) {
+        flags.add(TECHNICAL_FLAGS.UNDECLARED_SOFTWARE);
+        console.log(`Software no declarado detectado: ${software}`);
+      }
+    });
+  } else {
+    // Hay software detectado pero NO hay declaración de software
+    flags.add(TECHNICAL_FLAGS.SOFTWARE_SIGNATURE_UNKNOWN);
+    console.log(`Software detectado sin declaración previa: ${detectedSoftware[0]}`);
   }
 }
 
 async function checkFormatConsistency(metadata, intake_json, flags) {
   // Solo comparar si hay declaración de formato
+  // Nota: El JSON v1.0.0 no tiene campo "file_format", pero dejamos para futuras versiones
   const declaredFormat = intake_json?.artist_declaration?.file_format;
   
   if (declaredFormat && metadata.FileType) {
