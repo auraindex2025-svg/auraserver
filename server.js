@@ -1,0 +1,150 @@
+import express from "express";
+import crypto from "crypto";
+import stableStringify from "json-stable-stringify";
+import { createClient } from "@supabase/supabase-js";
+
+// ================================
+// CONFIGURACIÓN BÁSICA
+// ================================
+const app = express();
+app.use(express.json());
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// ================================
+// FUNCIONES AUXILIARES (INMUTABLES)
+// ================================
+
+function calculateSHA256Deterministic(obj) {
+  const stable = stableStringify(obj);
+  return crypto.createHash("sha256").update(stable).digest("hex");
+}
+
+function generateCaseId() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `AURA-${year}-${month}-${rand}`;
+}
+
+function validateProtocolMetadata(intake) {
+  if (
+    !intake?.aura_protocol ||
+    !intake.aura_protocol.phase ||
+    !intake.aura_protocol.version ||
+    !intake.aura_protocol.generated_at
+  ) {
+    throw new Error("Falta metadata de protocolo AURA");
+  }
+
+  if (intake.aura_protocol.version !== "1.0.0") {
+    throw new Error("Versión de protocolo no soportada");
+  }
+}
+
+// ================================
+// ENDPOINT ÚNICO — INGESTA FORENSE
+// ================================
+
+app.post("/intake-freeze", async (req, res) => {
+  try {
+    const { intake_data, client_hash } = req.body;
+
+    if (!intake_data || !client_hash) {
+      return res.status(400).json({
+        error: "DATOS_INCOMPLETOS",
+        required: ["intake_data", "client_hash"]
+      });
+    }
+
+    // 1️⃣ Validar SOLO protocolo
+    validateProtocolMetadata(intake_data);
+
+    // 2️⃣ Calcular server_hash
+    const server_hash = calculateSHA256Deterministic(intake_data);
+
+    // 3️⃣ Insertar intake_frozen (evidencia primaria)
+    const { data: frozen, error: frozenError } = await supabase
+      .from("intake_frozen")
+      .insert({
+        aura_intake_json: intake_data,
+        client_hash,
+        server_hash,
+        hash_match: client_hash === server_hash
+      })
+      .select("id, received_at")
+      .single();
+
+    if (frozenError) {
+      if (frozenError.code === "23505") {
+        return res.status(409).json({
+          error: "DECLARACION_DUPLICADA"
+        });
+      }
+      throw frozenError;
+    }
+
+    // 4️⃣ Crear audit_case
+    const case_id = generateCaseId();
+
+    const original_git =
+      intake_data.genesis_declaration?.declared_git_level ?? 0;
+
+    const original_cg =
+      intake_data.forensic_pre_evaluation?.pre_confidence_grade ?? "CG-?";
+
+    const { error: caseError } = await supabase
+      .from("audit_cases")
+      .insert({
+        case_id,
+        intake_frozen_id: frozen.id,
+        original_git,
+        original_cg,
+        intake_hash: server_hash,
+        status: "draft"
+      });
+
+    if (caseError) throw caseError;
+
+    // 5️⃣ Escribir audit_log
+    const { error: logError } = await supabase
+      .from("audit_logs")
+      .insert({
+        case_id,
+        action: "intake_frozen",
+        details: {
+          intake_frozen_id: frozen.id,
+          hash_match: client_hash === server_hash
+        },
+        actor_type: "system",
+        actor_id: "render-intake-service"
+      });
+
+    if (logError) throw logError;
+
+    // 6️⃣ Respuesta mínima
+    return res.status(201).json({
+      success: true,
+      case_id
+    });
+
+  } catch (err) {
+    console.error("ERROR INGESTA:", err.message);
+
+    return res.status(500).json({
+      error: "ERROR_INTERNO_SISTEMA"
+    });
+  }
+});
+
+// ================================
+// START SERVER
+// ================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`AURA Intake running on port ${PORT}`);
+});
