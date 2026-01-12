@@ -2,6 +2,7 @@
 import { exiftool } from 'exiftool-vendored';
 import { fileTypeFromBuffer } from 'file-type';
 import pdfParse from 'pdf-parse';
+import mm from 'music-metadata';  // ¡IMPORTANTE: AÑADIDO!
 import axios from 'axios';
 import fs from 'fs/promises';
 import path from 'path';
