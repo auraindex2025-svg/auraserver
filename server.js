@@ -1,7 +1,11 @@
+// ================================
+// IMPORTS (TODOS AL PRINCIPIO)
+// ================================
 import express from "express";
 import crypto from "crypto";
 import stableStringify from "json-stable-stringify";
 import { createClient } from "@supabase/supabase-js";
+import { analyzeMetadata } from './metadata-analyzer.js';
 
 // ================================
 // CONFIGURACIÓN BÁSICA
@@ -159,19 +163,6 @@ app.post("/intake-freeze", async (req, res) => {
 });
 
 // ================================
-// START SERVER
-// ================================
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`AURA Intake running on port ${PORT}`);
-});
-// ================================
-// IMPORTA EL ANALIZADOR
-// ================================
-
-import { analyzeMetadata } from './metadata-analyzer.js';
-
-// ================================
 // ENDPOINT 2.2 - ANÁLISIS DE METADATOS
 // ================================
 
@@ -254,4 +245,12 @@ app.post("/analysis/metadata", async (req, res) => {
       message: "Fallo en análisis de metadatos. Sistema no-decisorio."
     });
   }
+});
+
+// ================================
+// START SERVER
+// ================================
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`AURA Intake running on port ${PORT}`);
 });
