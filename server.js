@@ -7,6 +7,23 @@ import { createClient } from "@supabase/supabase-js";
 // CONFIGURACIÓN BÁSICA
 // ================================
 const app = express();
+
+/**
+ * 🔓 CORS SIMPLE (DESARROLLO)
+ * Permite cualquier origen y maneja preflight OPTIONS
+ */
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
 app.use(express.json());
 
 const supabase = createClient(
@@ -64,7 +81,7 @@ app.post("/intake-freeze", async (req, res) => {
     // 1️⃣ Validar SOLO protocolo
     validateProtocolMetadata(intake_data);
 
-    // 2️⃣ Calcular server_hash
+    // 2️⃣ Calcular server_hash (determinista)
     const server_hash = calculateSHA256Deterministic(intake_data);
 
     // 3️⃣ Insertar intake_frozen (evidencia primaria)
@@ -144,7 +161,7 @@ app.post("/intake-freeze", async (req, res) => {
 // ================================
 // START SERVER
 // ================================
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`AURA Intake running on port ${PORT}`);
 });
