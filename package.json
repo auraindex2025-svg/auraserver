@@ -13,3 +13,12 @@
     "json-stable-stringify": "^1.2.0"
   }
 }
+{
+  "dependencies": {
+    "exiftool-vendored": "^18.1.0",
+    "file-type": "^19.0.0",
+    "pdf-parse": "^1.1.1",
+    "music-metadata": "^8.6.3",
+    "axios": "^1.6.0"
+  }
+}
