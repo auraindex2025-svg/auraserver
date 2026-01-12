@@ -163,7 +163,7 @@ app.post("/intake-freeze", async (req, res) => {
 });
 
 // ================================
-// ENDPOINT 2.2 - ANÁLISIS DE METADATOS
+// ENDPOINT 2.2 - ANÁLISIS DE METADATOS (CORREGIDO)
 // ================================
 
 app.post("/analysis/metadata", async (req, res) => {
