@@ -1,6 +1,6 @@
 // metadata-analyzer.js
 import exiftool from 'exiftool-vendored';
-import FileType from 'file-type';
+import { fileTypeFromBuffer } from 'file-type';  // ¡CORREGIDO!
 import pdfParse from 'pdf-parse';
 import mm from 'music-metadata';
 import axios from 'axios';
@@ -91,7 +91,7 @@ export async function analyzeMetadata({ case_id, intake_json, file_url = null })
   try {
     // 🪜 PASO 3: Identificar tipo de archivo
     const fileBuffer = await fs.readFile(tempFilePath);
-    const fileType = await FileType.fromBuffer(fileBuffer);
+    const fileType = await fileTypeFromBuffer(fileBuffer);  // ¡CORREGIDO!
     
     if (!fileType) {
       flags.add(TECHNICAL_FLAGS.METADATA_MISSING);
