@@ -28,12 +28,20 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+// ================================
+// INICIALIZACIÓN SUPABASE
+// ================================
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error("ERROR: Variables de entorno SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas");
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ================================
 // FUNCIONES AUXILIARES (INMUTABLES)
@@ -221,7 +229,6 @@ app.post("/analysis/metadata", async (req, res) => {
           flags_count: analysisResult.metadata_flags.length,
           flags: analysisResult.metadata_flags,
           analysis_version: analysisResult.analysis_version,
-          // analysis_id puede ir aquí (interno) pero NO en output
           internal_analysis_id: crypto.randomUUID()
         },
         actor_type: "system",
@@ -245,6 +252,18 @@ app.post("/analysis/metadata", async (req, res) => {
       message: "Fallo en análisis de metadatos. Sistema no-decisorio."
     });
   }
+});
+
+// ================================
+// HEALTH CHECK
+// ================================
+
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "aura-intake-service",
+    version: "2.2.0"
+  });
 });
 
 // ================================
