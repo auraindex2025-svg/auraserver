@@ -16,7 +16,6 @@
     "exiftool-vendored": "^18.6.0",
     "file-type": "^19.0.0",
     "pdf-parse": "^1.1.1",
-    "music-metadata": "^8.0.2"
   },
   "engines": {
     "node": ">=18.0.0"
