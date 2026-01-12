@@ -1,6 +1,6 @@
 // metadata-analyzer.js
-import exiftool from 'exiftool-vendored';
-import { fileTypeFromBuffer } from 'file-type';  // ¡CORREGIDO!
+import { exiftool } from 'exiftool-vendored';
+import { fileTypeFromBuffer } from 'file-type';
 import pdfParse from 'pdf-parse';
 import mm from 'music-metadata';
 import axios from 'axios';
@@ -91,7 +91,7 @@ export async function analyzeMetadata({ case_id, intake_json, file_url = null })
   try {
     // 🪜 PASO 3: Identificar tipo de archivo
     const fileBuffer = await fs.readFile(tempFilePath);
-    const fileType = await fileTypeFromBuffer(fileBuffer);  // ¡CORREGIDO!
+    const fileType = await fileTypeFromBuffer(fileBuffer);
     
     if (!fileType) {
       flags.add(TECHNICAL_FLAGS.METADATA_MISSING);
@@ -108,13 +108,13 @@ export async function analyzeMetadata({ case_id, intake_json, file_url = null })
         flags.add(TECHNICAL_FLAGS.METADATA_MISSING);
       } else {
         // 5.1 Comparación de timeline (solo fechas objetivas)
-        await checkTimelineConsistency(metadata, intake_json, flags);
+        checkTimelineConsistency(metadata, intake_json, flags);
         
         // 5.2 Detección de software (solo comparación con declarado)
-        await checkSoftwareSignatures(metadata, intake_json, flags);
+        checkSoftwareSignatures(metadata, intake_json, flags);
         
         // 5.3 Verificación de formato (solo si hay declaración)
-        await checkFormatConsistency(metadata, intake_json, flags);
+        checkFormatConsistency(metadata, intake_json, flags);
       }
     }
     
@@ -210,7 +210,7 @@ async function extractTechnicalMetadata(filePath, mimeType) {
   return metadata;
 }
 
-async function checkTimelineConsistency(metadata, intake_json, flags) {
+function checkTimelineConsistency(metadata, intake_json, flags) {
   // Solo comparamos fechas si existen en ambos lados
   const declaredYear = intake_json?.artist_declaration?.execution_year;
   
@@ -240,7 +240,7 @@ async function checkTimelineConsistency(metadata, intake_json, flags) {
   }
 }
 
-async function checkSoftwareSignatures(metadata, intake_json, flags) {
+function checkSoftwareSignatures(metadata, intake_json, flags) {
   // Buscar firmas de software en metadatos
   const softwareFields = [
     metadata.Software,
@@ -298,7 +298,7 @@ async function checkSoftwareSignatures(metadata, intake_json, flags) {
   }
 }
 
-async function checkFormatConsistency(metadata, intake_json, flags) {
+function checkFormatConsistency(metadata, intake_json, flags) {
   // Solo comparar si hay declaración de formato
   // Nota: El JSON v1.0.0 no tiene campo "file_format", pero dejamos para futuras versiones
   const declaredFormat = intake_json?.artist_declaration?.file_format;
