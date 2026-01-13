@@ -1,12 +1,13 @@
 {
   "name": "aura-server",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "echo \"No tests yet\" && exit 0",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test-consistency": "node -e \"import('./consistency-engine.js').then(m => { console.log('🧪 Ejecutando tests de consistencia...'); Object.values(m.consistencyTests).forEach(test => test()); })\""
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -27,7 +28,8 @@
     "metadata",
     "analysis",
     "ai-detection",
-    "non-decisional"
+    "non-decisional",
+    "consistency"
   ],
   "author": "AURA Forensic Team",
   "license": "MIT"
