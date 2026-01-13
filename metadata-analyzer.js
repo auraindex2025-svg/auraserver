@@ -1,8 +1,8 @@
-// metadata-analyzer.js
+// metadata-analyzer.js - BLOQUE 3.1
 import { exiftool } from 'exiftool-vendored';
 import { fileTypeFromBuffer } from 'file-type';
 import pdfParse from 'pdf-parse';
-import mm from 'music-metadata';  // ¡IMPORTANTE: AÑADIDO!
+import mm from 'music-metadata';
 import axios from 'axios';
 import fs from 'fs/promises';
 import path from 'path';
@@ -13,7 +13,8 @@ import crypto from 'crypto';
 // CONSTANTES Y ENUMS (INMUTABLES)
 // ================================
 
-const ANALYSIS_VERSION = '2.2.0';
+const ANALYSIS_VERSION = '3.1.0';
+const EXTRACTION_VERSION = '3.1.0';
 
 const TECHNICAL_FLAGS = Object.freeze({
   METADATA_MISSING: 'METADATA_MISSING',
@@ -32,16 +33,16 @@ const TECHNICAL_FLAGS = Object.freeze({
  * Este módulo realiza análisis técnico de metadatos.
  * NO valida autenticidad. NO determina uso de IA.
  * NO invalida casos. NO modifica evidencias.
- * Solo compara datos técnicos contra declaraciones.
- * Versión: 2.2.0 (Análisis Técnico No-Decisorio)
+ * Solo extrae datos técnicos verificables.
+ * Versión: 3.1.0 (Extracción Técnica No-Decisoria)
  */
 
 // ================================
-// FUNCIÓN PRINCIPAL (READ-ONLY)
+// FUNCIÓN PRINCIPAL BLOQUE 3.1
 // ================================
 
 /**
- * 🧩 Analizador de Metadatos Técnicos - FASE 2.2
+ * 🧩 Extracción de Metadatos Técnicos - BLOQUE 3.1
  * 
  * @param {Object} params
  * @param {string} params.case_id - ID del caso AURA
@@ -147,6 +148,71 @@ export async function analyzeMetadata({ case_id, intake_json, file_url = null })
 }
 
 // ================================
+// NUEVA FUNCIÓN PARA BLOQUE 3.1 - EXTRACCIÓN PURA
+// ================================
+
+/**
+ * 🧾 Extracción Técnica de Metadatos (BLOQUE 3.1)
+ * Solo extrae, no analiza, no decide
+ */
+export async function extractEvidenceMetadata(file_url) {
+  const extraction_id = crypto.randomUUID();
+  console.log(`[${extraction_id}] Iniciando extracción técnica`);
+  
+  let tempFilePath = null;
+  try {
+    // 1. Descargar archivo temporal
+    tempFilePath = await downloadFile(file_url);
+    
+    // 2. Identificar tipo de archivo
+    const fileBuffer = await fs.readFile(tempFilePath);
+    const fileType = await fileTypeFromBuffer(fileBuffer);
+    
+    if (!fileType) {
+      console.log(`[${extraction_id}] Tipo de archivo no identificable`);
+      return {
+        metadata: {},
+        extraction_version: EXTRACTION_VERSION,
+        extraction_error: 'Tipo de archivo no identificable'
+      };
+    }
+    
+    console.log(`[${extraction_id}] Tipo detectado: ${fileType.mime}`);
+    
+    // 3. Extraer metadatos según formato
+    const rawMetadata = await extractTechnicalMetadata(tempFilePath, fileType.mime);
+    
+    // 4. Normalizar metadatos (claves estables)
+    const normalizedMetadata = normalizeMetadata(rawMetadata);
+    
+    console.log(`[${extraction_id}] Extracción completada: ${Object.keys(normalizedMetadata).length} campos`);
+    
+    return {
+      metadata: normalizedMetadata,
+      extraction_version: EXTRACTION_VERSION,
+      extracted_at: new Date().toISOString()
+    };
+    
+  } catch (error) {
+    console.error(`[${extraction_id}] Error en extracción:`, error.message);
+    return {
+      metadata: {},
+      extraction_version: EXTRACTION_VERSION,
+      extraction_error: error.message
+    };
+  } finally {
+    // Limpieza
+    if (tempFilePath) {
+      try {
+        await fs.unlink(tempFilePath);
+      } catch (cleanupError) {
+        console.warn(`[${extraction_id}] Error limpiando archivo temporal:`, cleanupError.message);
+      }
+    }
+  }
+}
+
+// ================================
 // FUNCIONES AUXILIARES (TÉCNICAS PURAS)
 // ================================
 
@@ -159,7 +225,7 @@ async function downloadFile(url) {
   });
   
   const tempDir = tmpdir();
-  const filename = `aura_analysis_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const filename = `aura_evidence_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
   const filepath = path.join(tempDir, filename);
   
   await fs.writeFile(filepath, response.data);
@@ -210,12 +276,62 @@ async function extractTechnicalMetadata(filePath, mimeType) {
   return metadata;
 }
 
+function normalizeMetadata(rawMetadata) {
+  // Normalizar claves para consistencia
+  const normalized = {};
+  
+  // Mapear campos comunes a nombres estables
+  const fieldMapping = {
+    'Software': 'software',
+    'CreatorTool': 'creator_tool',
+    'Application': 'application',
+    'ProcessingSoftware': 'processing_software',
+    'DateTimeOriginal': 'date_time_original',
+    'CreateDate': 'create_date',
+    'ModifyDate': 'modify_date',
+    'DateCreated': 'date_created',
+    'CreationDate': 'creation_date',
+    'FileType': 'file_type',
+    'MIMEType': 'mime_type',
+    'ColorSpace': 'color_space',
+    'ICCProfileName': 'icc_profile_name',
+    'Compression': 'compression',
+    'ImageWidth': 'image_width',
+    'ImageHeight': 'image_height',
+    'BitsPerSample': 'bits_per_sample',
+    'XResolution': 'x_resolution',
+    'YResolution': 'y_resolution',
+    'ResolutionUnit': 'resolution_unit'
+  };
+  
+  // Aplicar mapeo
+  Object.keys(rawMetadata).forEach(key => {
+    const normalizedKey = fieldMapping[key] || key.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    normalized[normalizedKey] = rawMetadata[key];
+  });
+  
+  // Detectar cadena de exportación
+  normalized.export_chain_detected = detectExportChain(normalized);
+  
+  return normalized;
+}
+
+function detectExportChain(metadata) {
+  // Detectar signos de cadena de exportación
+  const chainIndicators = [
+    metadata.software,
+    metadata.creator_tool,
+    metadata.application,
+    metadata.processing_software
+  ].filter(Boolean);
+  
+  return chainIndicators.length > 1;
+}
+
 function checkTimelineConsistency(metadata, intake_json, flags) {
-  // Solo comparamos fechas si existen en ambos lados
   const declaredYear = intake_json?.artist_declaration?.execution_year;
   
   if (declaredYear) {
-    // Buscar cualquier fecha en metadatos
     const possibleDateFields = [
       metadata.DateTimeOriginal,
       metadata.CreateDate,
@@ -241,7 +357,6 @@ function checkTimelineConsistency(metadata, intake_json, flags) {
 }
 
 function checkSoftwareSignatures(metadata, intake_json, flags) {
-  // Buscar firmas de software en metadatos
   const softwareFields = [
     metadata.Software,
     metadata.CreatorTool,
@@ -252,14 +367,11 @@ function checkSoftwareSignatures(metadata, intake_json, flags) {
   const detectedSoftware = softwareFields.filter(Boolean);
   
   if (detectedSoftware.length === 0) {
-    return; // No hay software detectado, nada que comparar
+    return;
   }
   
-  // 🚫 CORRECCIÓN CRÍTICA: NO filtrar por "ai_tools_declared"
-  // Debemos verificar TODA declaración de software en el intake
   const declaredTools = [];
   
-  // 1. Verificar si existe genesis_declaration.ai_tools_declared (sin asumir que son solo IA)
   if (intake_json?.genesis_declaration?.ai_tools_declared) {
     intake_json.genesis_declaration.ai_tools_declared.forEach(tool => {
       if (tool.engine) declaredTools.push(tool.engine);
@@ -267,19 +379,13 @@ function checkSoftwareSignatures(metadata, intake_json, flags) {
     });
   }
   
-  // 2. Verificar process_declaration.software_used (si el campo existe en futuras versiones)
-  // Nota: Este campo no existe en el JSON v1.0.0, pero lo dejamos para extensibilidad
   if (intake_json?.process_declaration?.software_used) {
     intake_json.process_declaration.software_used.forEach(software => {
       declaredTools.push(software);
     });
   }
   
-  // 🚫 ELIMINADO: No asumir que "ai_tools_declared" son solo herramientas de IA
-  // Tratar todas las herramientas como software genérico
-  
   if (declaredTools.length > 0) {
-    // Hay software declarado → comparar
     detectedSoftware.forEach(software => {
       const isDeclared = declaredTools.some(declared => 
         software.toLowerCase().includes(declared.toLowerCase()) ||
@@ -292,27 +398,22 @@ function checkSoftwareSignatures(metadata, intake_json, flags) {
       }
     });
   } else {
-    // Hay software detectado pero NO hay declaración de software
     flags.add(TECHNICAL_FLAGS.SOFTWARE_SIGNATURE_UNKNOWN);
     console.log(`Software detectado sin declaración previa: ${detectedSoftware[0]}`);
   }
 }
 
 function checkFormatConsistency(metadata, intake_json, flags) {
-  // Solo comparar si hay declaración de formato
-  // Nota: El JSON v1.0.0 no tiene campo "file_format", pero dejamos para futuras versiones
   const declaredFormat = intake_json?.artist_declaration?.file_format;
   
   if (declaredFormat && metadata.FileType) {
     const detectedFormat = metadata.FileType.toLowerCase();
     const declaredFormatLower = declaredFormat.toLowerCase();
     
-    // Comparación básica (podría mejorarse según necesidades)
     if (!detectedFormat.includes(declaredFormatLower) && 
         !declaredFormatLower.includes(detectedFormat)) {
       flags.add(TECHNICAL_FLAGS.FORMAT_VERSION_MISMATCH);
       console.log(`Formato no coincide: Declarado ${declaredFormat}, Detectado ${detectedFormat}`);
     }
   }
-  // Si no hay declaración de formato → NO flag
 }
