@@ -6,6 +6,7 @@ import crypto from "crypto";
 import stableStringify from "json-stable-stringify";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeMetadata, extractEvidenceMetadata } from './metadata-analyzer.js';
+import { evaluateConsistency } from './consistency-engine.js';
 
 // ================================
 // CONFIGURACIÓN BÁSICA
@@ -574,6 +575,232 @@ app.post("/analysis/ai-signals", async (req, res) => {
 });
 
 // ================================
+// BLOQUE 2.4 — CONSISTENCY EVALUATION ENGINE
+// ================================
+
+app.post("/analysis/consistency", async (req, res) => {
+  // 🚫 DECLARACIÓN DE NO-DECISIÓN
+  console.log('===========================================');
+  console.log('BLOQUE 2.4 — EVIDENCE VS DECLARATION CONSISTENCY');
+  console.log('Sistema no-decisorio: Solo evaluación de coherencia técnica');
+  console.log('NO detecta IA. NO decide autenticidad.');
+  console.log('NO recalcula GIT. NO interpreta intención.');
+  console.log('===========================================');
+
+  try {
+    const { case_id, evidence_list } = req.body;
+
+    if (!case_id) {
+      return res.status(400).json({
+        error: "PARAMETROS_INCOMPLETOS",
+        required: ["case_id"]
+      });
+    }
+
+    // 1️⃣ Obtener caso y declaraciones (SOLO LECTURA)
+    const { data: auditCase, error: caseError } = await supabase
+      .from("audit_cases")
+      .select(`
+        *,
+        intake_frozen (
+          aura_intake_json
+        )
+      `)
+      .eq("case_id", case_id)
+      .single();
+
+    if (caseError || !auditCase) {
+      return res.status(404).json({
+        error: "CASO_NO_ENCONTRADO"
+      });
+    }
+
+    // 2️⃣ Obtener resultados técnicos previos
+    // a) Metadatos flags (de audit_logs de metadata_analysis_executed)
+    const { data: metadataLogs } = await supabase
+      .from("audit_logs")
+      .select("details")
+      .eq("case_id", case_id)
+      .eq("action", "metadata_analysis_executed")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    // b) Metadatos extraídos
+    const { data: evidenceMetadata } = await supabase
+      .from("evidence_metadata")
+      .select("metadata")
+      .eq("case_id", case_id)
+      .order("extracted_at", { ascending: false })
+      .limit(1);
+
+    // c) Señales de IA
+    const { data: aiSignalResults } = await supabase
+      .from("ai_signal_results")
+      .select("*")
+      .eq("case_id", case_id)
+      .order("analyzed_at", { ascending: false })
+      .limit(1);
+
+    // 3️⃣ Preparar datos para evaluación
+    const intake_declarations = auditCase.intake_frozen.aura_intake_json;
+    
+    const technical_evidence = {
+      metadata_flags: metadataLogs?.[0]?.details?.flags || [],
+      extracted_metadata: evidenceMetadata?.[0]?.metadata || {},
+      ai_signals: aiSignalResults?.[0] || null
+    };
+
+    // 4️⃣ Evaluar consistencia (motor no-decisorio)
+    const consistencyResult = await evaluateConsistency({
+      case_id,
+      intake_declarations,
+      technical_evidence,
+      evidence_list: evidence_list || {}
+    });
+
+    // 5️⃣ Registrar en audit_logs
+    const { error: logError } = await supabase
+      .from("audit_logs")
+      .insert({
+        case_id,
+        action: "consistency_evaluation_executed",
+        details: {
+          consistency_result: consistencyResult.consistency_result,
+          affected_dimensions: consistencyResult.affected_dimensions,
+          engine_version: consistencyResult.engine_version
+        },
+        actor_type: "system",
+        actor_id: "consistency-engine-2.4"
+      });
+
+    if (logError) {
+      console.error("Error registrando log de consistencia:", logError);
+      // 🚫 NO FALLAMOS - la evaluación se completó
+    }
+
+    // 6️⃣ Respuesta normalizada
+    return res.status(200).json(consistencyResult);
+
+  } catch (err) {
+    console.error("ERROR en evaluación de consistencia:", err.message);
+    
+    return res.status(500).json({
+      error: "ERROR_EVALUACION_CONSISTENCIA",
+      message: "Fallo en evaluación de consistencia. Sistema no-decisorio.",
+      engine_version: "2.4.0"
+    });
+  }
+});
+
+// ================================
+// ENDPOINT DE PIPELINE COMPLETO
+// ================================
+
+app.post("/analysis/pipeline", async (req, res) => {
+  console.log('===========================================');
+  console.log('PIPELINE COMPLETO AURA');
+  console.log('Secuencia: 2.2 → 3.1 → 3.2 → 2.4');
+  console.log('===========================================');
+
+  try {
+    const { case_id, file_urls, evidence_list } = req.body;
+
+    if (!case_id) {
+      return res.status(400).json({
+        error: "PARAMETROS_INCOMPLETOS",
+        required: ["case_id"]
+      });
+    }
+
+    // 1️⃣ Obtener declaraciones del caso
+    const { data: auditCase, error: caseError } = await supabase
+      .from("audit_cases")
+      .select(`
+        *,
+        intake_frozen (
+          aura_intake_json
+        )
+      `)
+      .eq("case_id", case_id)
+      .single();
+
+    if (caseError || !auditCase) {
+      return res.status(404).json({
+        error: "CASO_NO_ENCONTRADO"
+      });
+    }
+
+    const intake_json = auditCase.intake_frozen.aura_intake_json;
+    const results = {
+      case_id,
+      pipeline_version: "3.1.0_full",
+      steps: {},
+      generated_at: new Date().toISOString()
+    };
+
+    // 2️⃣ PASO 1: Análisis de metadatos (2.2) si hay file_url
+    if (file_urls && file_urls.length > 0) {
+      const metadataResult = await analyzeMetadata({
+        case_id,
+        intake_json,
+        file_url: file_urls[0]
+      });
+      results.steps.metadata_analysis = metadataResult;
+    }
+
+    // 3️⃣ PASO 2: Extracción de metadatos (3.1) si hay evidencias
+    if (file_urls && file_urls.length > 0) {
+      const evidences = file_urls.map((url, index) => ({
+        evidence_id: `EVIDENCE_${index + 1}`,
+        file_url: url
+      }));
+
+      const extractionResult = await fetch(`http://localhost:${process.env.PORT || 10000}/analysis/metadata-extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ case_id, evidences })
+      }).then(r => r.json());
+
+      results.steps.metadata_extraction = extractionResult;
+    }
+
+    // 4️⃣ PASO 3: Señales de IA (3.2)
+    const aiSignalsResult = await fetch(`http://localhost:${process.env.PORT || 10000}/analysis/ai-signals`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ case_id })
+    }).then(r => r.json());
+
+    results.steps.ai_signal_detection = aiSignalsResult;
+
+    // 5️⃣ PASO 4: Evaluación de consistencia (2.4)
+    const consistencyResult = await evaluateConsistency({
+      case_id,
+      intake_declarations: intake_json,
+      technical_evidence: {
+        metadata_flags: results.steps.metadata_analysis?.metadata_flags || [],
+        extracted_metadata: {},
+        ai_signals: results.steps.ai_signal_detection || {}
+      },
+      evidence_list: evidence_list || { files: [] }
+    });
+
+    results.steps.consistency_evaluation = consistencyResult;
+
+    // 6️⃣ Respuesta consolidada
+    return res.status(200).json(results);
+
+  } catch (err) {
+    console.error("ERROR en pipeline completo:", err.message);
+    
+    return res.status(500).json({
+      error: "ERROR_PIPELINE_COMPLETO",
+      message: "Fallo en ejecución del pipeline completo."
+    });
+  }
+});
+
+// ================================
 // HEALTH CHECK
 // ================================
 
@@ -581,8 +808,22 @@ app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "aura-forensic-service",
-    version: "3.0.0",
-    blocks_available: ["2.2", "3.1", "3.2"]
+    version: "3.1.0",
+    blocks_available: ["2.2", "2.4", "3.1", "3.2"],
+    principles: [
+      "NO valida autenticidad",
+      "NO determina uso de IA",
+      "NO invalida casos",
+      "Solo análisis técnico objetivo"
+    ],
+    endpoints: {
+      intake: "POST /intake-freeze",
+      metadata_analysis: "POST /analysis/metadata",
+      metadata_extraction: "POST /analysis/metadata-extract",
+      ai_signals: "POST /analysis/ai-signals",
+      consistency: "POST /analysis/consistency",
+      pipeline: "POST /analysis/pipeline"
+    }
   });
 });
 
@@ -591,7 +832,16 @@ app.get("/health", (req, res) => {
 // ================================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`AURA Forensic Service running on port ${PORT}`);
-  console.log(`BLOQUE 3 implementado: 3.1 (Metadata Forensics) y 3.2 (AI Signal Detection)`);
-  console.log(`🚫 SISTEMA NO-DECISORIO: Solo genera hechos técnicos y señales auxiliares`);
+  console.log(`🚀 AURA Forensic Service running on port ${PORT}`);
+  console.log(`📊 VERSIÓN: 3.1.0 (BLOQUE 2.4 integrado)`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log(`📌 PRINCIPIO FORENSE: Análisis técnico, no-decisorio.`);
+  console.log(`\n🎯 ENDPOINTS DISPONIBLES:`);
+  console.log(`   POST /intake-freeze           - Congelar declaraciones`);
+  console.log(`   POST /analysis/metadata       - BLOQUE 2.2: Análisis metadatos`);
+  console.log(`   POST /analysis/metadata-extract - BLOQUE 3.1: Extracción metadatos`);
+  console.log(`   POST /analysis/ai-signals     - BLOQUE 3.2: Señales de IA`);
+  console.log(`   POST /analysis/consistency    - BLOQUE 2.4: Evaluación de consistencia`);
+  console.log(`   POST /analysis/pipeline       - Pipeline completo (2.2 → 3.1 → 3.2 → 2.4)`);
+  console.log(`\n⚠️  SISTEMA NO-DECISORIO: Solo genera hechos técnicos y señales auxiliares`);
 });
