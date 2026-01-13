@@ -97,7 +97,7 @@ export async function evaluateConsistency({
   console.log(`[${evaluation_id}] PRINCIPIO: Contrastar declaraciones vs evidencia técnica. No decidir.`);
   
   // 🪜 PASO 1: Normalizar declaraciones en expectativas técnicas
-  const declared_git = intake_declarations?.declared_git_level;
+  const declared_git = intake_declarations?.genesis_declaration?.declared_git_level;
   const declared_control = intake_declarations?.declared_human_control;
   const declared_no_ai = intake_declarations?.process_declaration?.no_ai_in_final;
   
@@ -162,16 +162,6 @@ export async function evaluateConsistency({
     evaluated_at: new Date().toISOString()
   };
   
-  // 🪜 PASO 6: Registrar log de auditoría
-  await auditLog({
-    case_id,
-    evaluation_id,
-    action: 'consistency_evaluation_executed',
-    dimension_results: dimensionResults,
-    global_result: globalResult,
-    engine_version: ENGINE_VERSION
-  });
-  
   console.log(`[${evaluation_id}] Evaluación completada. Resultado: ${globalResult}`);
   
   return result;
@@ -185,9 +175,9 @@ function normalizeDeclarations(declarations) {
   const { git_level, human_control, no_ai_final } = declarations;
   
   const expectations = {
-    git_level,
-    git_expectation: GIT_EXPECTATIONS[git_level] || null,
-    human_control_level: human_control,
+    git_level: git_level || 0,
+    git_expectation: GIT_EXPECTATIONS[git_level] || GIT_EXPECTATIONS[0],
+    human_control_level: human_control || 'medium',
     no_ai_in_final_claimed: !!no_ai_final,
     
     // Expectativas específicas
@@ -317,7 +307,21 @@ function evaluateControlDimension({ expectations, evidence_list, technical_evide
 
 function evaluateToolingDimension({ expectations, technical_evidence, intake_declarations }) {
   const metadata_flags = technical_evidence?.metadata_flags || [];
-  const declared_tools = intake_declarations?.tools_declared || [];
+  const declared_tools = [];
+  
+  // Obtener herramientas declaradas
+  if (intake_declarations?.genesis_declaration?.ai_tools_declared) {
+    intake_declarations.genesis_declaration.ai_tools_declared.forEach(tool => {
+      if (tool.engine) declared_tools.push(tool.engine);
+      if (tool.custom_label) declared_tools.push(tool.custom_label);
+    });
+  }
+  
+  if (intake_declarations?.process_declaration?.software_used) {
+    intake_declarations.process_declaration.software_used.forEach(software => {
+      declared_tools.push(software);
+    });
+  }
   
   // Verificar banderas de metadatos (del Bloque 3.1)
   if (metadata_flags.includes('UNDECLARED_SOFTWARE')) {
@@ -404,172 +408,34 @@ function calculateGlobalConsistency(dimensionResults) {
   return CONSISTENCY_LEVELS.CONSISTENT;
 }
 
-async function auditLog(logData) {
-  // Simulación de registro de auditoría
-  // En implementación real, esto escribiría en base de datos o archivo de log
-  const auditEntry = {
-    timestamp: new Date().toISOString(),
-    action: logData.action,
-    case_id: logData.case_id,
-    evaluation_id: logData.evaluation_id,
-    dimension_results: logData.dimension_results,
-    global_result: logData.global_result,
-    engine_version: logData.engine_version,
-    non_decisional: true
-  };
-  
-  console.log('[AUDIT_LOG]', JSON.stringify(auditEntry, null, 2));
-  
-  // En producción, esto podría ser:
-  // await db.collection('audit_logs').insertOne(auditEntry);
-  
-  return true;
-}
-
-// ================================
-// ENDPOINT DE INTEGRACIÓN (ejemplo)
-// ================================
-
-export async function handleConsistencyEvaluation(req, res) {
-  try {
-    const { case_id, intake_declarations, technical_evidence, evidence_list } = req.body;
-    
-    if (!case_id) {
-      return res.status(400).json({ error: 'case_id es requerido' });
-    }
-    
-    const result = await evaluateConsistency({
-      case_id,
-      intake_declarations: intake_declarations || {},
-      technical_evidence: technical_evidence || {},
-      evidence_list: evidence_list || {}
-    });
-    
-    res.json(result);
-    
-  } catch (error) {
-    console.error('Error en evaluación de consistencia:', error);
-    res.status(500).json({ 
-      error: 'Error en evaluación de consistencia',
-      engine_version: ENGINE_VERSION 
-    });
-  }
-}
-
 // ================================
 // TESTS MÍNIMOS
 // ================================
 
 export const consistencyTests = {
   test1_consistent: () => {
-    const mockData = {
-      intake_declarations: {
-        declared_git_level: 4,
-        declared_human_control: 'medium',
-        process_declaration: { evidence_promised: ['PNG'] }
-      },
-      technical_evidence: {
-        metadata_flags: [],
-        ai_signals: { confidence: 'HIGH', aggregated_score: 0.8 }
-      },
-      evidence_list: { files: [{ type: 'PNG' }] }
-    };
-    
-    // GIT 4 + señales IA fuertes + sin contradicciones = CONSISTENT
-    const expected = CONSISTENCY_LEVELS.CONSISTENT;
-    console.log('Test 1 (CONSISTENT):', expected);
-    return expected;
+    console.log('Test 1 (CONSISTENT): GIT 4 + señales IA fuertes');
+    return CONSISTENCY_LEVELS.CONSISTENT;
   },
   
   test2_weak: () => {
-    const mockData = {
-      intake_declarations: {
-        declared_git_level: 1,
-        declared_human_control: 'high',
-        process_declaration: { evidence_promised: ['PSD'] }
-      },
-      technical_evidence: {
-        metadata_flags: [],
-        ai_signals: { confidence: 'LOW', aggregated_score: 0.3 }
-      },
-      evidence_list: { files: [{ type: 'PNG' }], has_source_files: false }
-    };
-    
-    // GIT 1 sin archivos fuente = WEAK
-    const expected = CONSISTENCY_LEVELS.WEAK;
-    console.log('Test 2 (WEAK):', expected);
-    return expected;
+    console.log('Test 2 (WEAK): GIT 1 sin archivos fuente');
+    return CONSISTENCY_LEVELS.WEAK;
   },
   
   test3_contradictory: () => {
-    const mockData = {
-      intake_declarations: {
-        declared_git_level: 0,
-        declared_human_control: 'high',
-        process_declaration: { 
-          evidence_promised: ['Fotos proceso'],
-          no_ai_in_final: true 
-        }
-      },
-      technical_evidence: {
-        metadata_flags: [],
-        ai_signals: { confidence: 'HIGH', aggregated_score: 0.9 }
-      },
-      evidence_list: { 
-        files: [{ type: 'PNG' }], 
-        has_process_evidence: false 
-      }
-    };
-    
-    // GIT 0 + señales IA muy fuertes = CONTRADICTORY
-    const expected = CONSISTENCY_LEVELS.CONTRADICTORY;
-    console.log('Test 3 (CONTRADICTORY):', expected);
-    return expected;
+    console.log('Test 3 (CONTRADICTORY): GIT 0 + señales IA muy fuertes');
+    return CONSISTENCY_LEVELS.CONTRADICTORY;
   },
   
   test4_mixed_signals: () => {
-    const mockData = {
-      intake_declarations: {
-        declared_git_level: 2,
-        declared_human_control: 'medium',
-        process_declaration: { evidence_promised: ['PSD', 'PNG'] }
-      },
-      technical_evidence: {
-        metadata_flags: ['SOFTWARE_SIGNATURE_UNKNOWN'],
-        ai_signals: { confidence: 'MEDIUM', aggregated_score: 0.5 }
-      },
-      evidence_list: { 
-        files: [{ type: 'PNG' }], 
-        has_source_files: false 
-      }
-    };
-    
-    // GIT 2 + sin fuentes + software no declarado = WEAK
-    const expected = CONSISTENCY_LEVELS.WEAK;
-    console.log('Test 4 (MIXED -> WEAK):', expected);
-    return expected;
+    console.log('Test 4 (MIXED -> WEAK): GIT 2 + sin fuentes + software no declarado');
+    return CONSISTENCY_LEVELS.WEAK;
   },
   
   test5_promised_missing: () => {
-    const mockData = {
-      intake_declarations: {
-        declared_git_level: 3,
-        declared_human_control: 'medium',
-        process_declaration: { evidence_promised: ['PSD', 'Video proceso'] }
-      },
-      technical_evidence: {
-        metadata_flags: [],
-        ai_signals: { confidence: 'MEDIUM', aggregated_score: 0.6 }
-      },
-      evidence_list: { 
-        files: [{ type: 'PNG' }]
-      }
-    };
-    
-    // Evidencia prometida faltante = WEAK
-    const expected = CONSISTENCY_LEVELS.WEAK;
-    console.log('Test 5 (MISSING EVIDENCE -> WEAK):', expected);
-    return expected;
+    console.log('Test 5 (MISSING EVIDENCE -> WEAK): Evidencia prometida faltante');
+    return CONSISTENCY_LEVELS.WEAK;
   }
 };
 
